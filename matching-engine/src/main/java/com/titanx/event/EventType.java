@@ -1,0 +1,13 @@
+package com.titanx.event;
+
+public enum EventType {
+    ORDER_RECEIVED,
+    ORDER_RESTING,
+    ORDER_PARTIALLY_FILLED,
+    ORDER_FILLED,
+    ORDER_CANCELLED,
+    ORDER_REJECTED,
+    CIRCUIT_BREAKER_TRIGGERED,
+    ENGINE_HALTED,
+    ENGINE_RESUMED
+}

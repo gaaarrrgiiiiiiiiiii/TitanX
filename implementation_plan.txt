@@ -1,0 +1,123 @@
+This will be a comprehensive response. Let me build the full implementation plan with an architecture diagram.Click any box to go deeper on that component. Here's the full implementation plan:
+
+---
+
+## What TitanX actually is — and why it's different
+
+Most student "trading projects" are CRUD apps in disguise: an order table in SQL, a REST endpoint, a loop that checks for matches. TitanX is different because the problem you're solving is fundamentally a **latency and correctness problem under concurrency** — the same category of problem that Jane Street, Citadel, and Goldman's Strats team live in. The engineering challenge isn't "can I store orders", it's "can I match 100K orders per minute with zero incorrect fills and zero lost events, without a global lock".
+
+That gap is the entire point of the project.
+
+---
+
+## Phase 1 — Core matching engine (the hard part)
+
+This is where TitanX lives or dies. Everything else is scaffolding.
+
+**Order book data structure.** Use two `TreeMap<BigDecimal, PriorityQueue<Order>>` — one for bids (descending), one for asks (ascending). The outer key is price level, the inner queue is FIFO within that level (price-time priority). This is correct and fast. Avoid `HashMap` here — you need sorted iteration for matching.
+
+**Matching logic.** For a market order, consume the best ask levels greedily until the order is filled or the book is empty. For a limit order, check if the opposite side crosses (buy limit ≥ best ask, sell limit ≤ best bid); if yes, match; if no, insert into the book. Handle partial fills: split the aggressor, update resting quantities, emit fill events for both sides.
+
+**Concurrency.** The naive approach is one big `synchronized` block — that's a global lock and it serializes everything. The professional approach is the **LMAX Disruptor pattern**: a single-threaded matching loop consuming from a lock-free ring buffer. All incoming orders are pre-validated and enqueued; the matching thread never locks. This is what real exchanges use and it's what makes TitanX stand out technically. At minimum, use `ReentrantReadWriteLock` per symbol so different instruments can match concurrently.
+
+**Order types to support:**
+- Market, Limit (basic)
+- IOC (Immediate-or-Cancel) — fills what it can, cancels the rest
+- FOK (Fill-or-Kill) — fills completely or not at all
+- Stop-limit — triggered when a price threshold is crossed
+
+---
+
+## Phase 2 — Risk engine (what separates exchange engineers from backend engineers)
+
+A matching engine with no risk controls is a broken exchange. This is where the Citi training and your fintech focus pays off.
+
+**Pre-trade checks (before order enters the book):**
+- Position limits per account (e.g. max 10,000 shares net long/short)
+- Notional value limits (max order size in USD equivalent)
+- Duplicate order ID detection (idempotency key per client)
+- Self-trade prevention — reject an order that would match against the same account
+
+**Circuit breakers:**
+- Per-instrument halt if price moves more than X% in Y seconds
+- Global kill switch — a single flag that drains the ring buffer and halts all matching (used in production emergencies)
+- Fat finger protection — reject orders priced more than N% from the last trade price
+
+**Post-trade (after fill):**
+- P&L tracking per account in Redis (hot path)
+- Margin calculation for leveraged accounts
+- End-of-day position reconciliation against the PostgreSQL audit trail
+
+---
+
+## Phase 3 — Infrastructure and persistence
+
+**Redis** handles two things: in-flight order state (open orders by orderId, current positions by accountId) and pub/sub for broadcasting fills and order book updates to WebSocket subscribers. Persistence happens asynchronously so it never blocks the matching thread.
+
+**PostgreSQL** is your audit trail — every order event (new, modify, cancel, fill) is written to an `order_events` append-only table. This is your write-ahead log. You can reconstruct the entire order book state at any point in time by replaying events from T=0.
+
+**Event sourcing pattern.** Don't update rows — append events. `order_placed`, `order_partially_filled`, `order_filled`, `order_cancelled`. Current state is a projection over events. This is how Bloomberg and ICE build their systems and it gives you crash recovery for free.
+
+**Docker Compose setup:**
+```
+services: matching-engine, api-gateway, redis, postgres, prometheus, grafana
+```
+The matching engine and gateway should be separate processes communicating over a local socket (or Redis Streams if you want to simulate a real multi-process exchange).
+
+---
+
+## Phase 4 — Security (critical for financial systems)
+
+This is underweighted in most projects and immediately noticed by Goldman interviewers.
+
+**Authentication:** JWT tokens with short expiry (15 minutes) + refresh token rotation. Each token carries `accountId`, `permissions` (read/trade/admin), and `sessionId`. The gateway validates on every request before touching the matching engine.
+
+**API rate limiting:** Token bucket per account, per endpoint. 100 order submissions/second for standard accounts. Hard-reject with HTTP 429 + `Retry-After` header. Implemented in the gateway layer, not the matching engine.
+
+**Input validation:** Every order must pass schema validation (positive quantity, valid symbol, price within bounds) before hitting the risk engine. Reject early, reject loudly.
+
+**Audit logging:** Every action — including rejected orders and authentication failures — goes to an immutable append-only log. Timestamps with microsecond precision. This is a regulatory requirement in real exchanges (MiFID II, RegNMS).
+
+**TLS everywhere.** Even in local dev. Use self-signed certs in Docker, proper certs for any cloud deployment.
+
+---
+
+## Phase 5 — Observability
+
+This is what separates a project from a production system.
+
+**Key metrics to expose via Micrometer:**
+- `order.matching.latency` — p50, p95, p99 in microseconds
+- `order.book.depth` — number of price levels per instrument
+- `orders.per.second` — throughput gauge
+- `risk.rejections.total` — counter by rejection reason
+- `fill.rate` — percentage of orders that result in a fill
+
+**Structured logging:** Every log line is JSON with `orderId`, `accountId`, `symbol`, `action`, `latencyMicros`, `timestamp`. This lets you grep for a specific order's full lifecycle across all services.
+
+**Dashboards in Grafana:** One dashboard showing matching engine health (latency heatmap, throughput), one showing risk (rejection rates, position concentrations), one showing system health (JVM GC pauses, Redis memory, Postgres query times).
+
+---
+
+## What to say in interviews
+
+The reason this project stands out is that you can have a precise technical conversation about trade-offs. When asked "what would you improve?", the answer isn't "I'd add more features" — it's:
+
+> "The current implementation uses ReentrantReadWriteLock per symbol. The next step is a Disruptor-based ring buffer to eliminate lock contention entirely — that's how LMAX achieved sub-microsecond latency. I also want to add a snapshot-and-replay mechanism so I can restore order book state after a crash without replaying the full event log from genesis."
+
+That's the conversation Goldman Strats engineers have daily. TitanX puts you in it.
+
+---
+
+## Suggested build order
+
+1. Order book + matching engine (single-threaded, correct) — 2 weeks
+2. Concurrency layer (lock-per-symbol, then Disruptor) — 1 week
+3. Risk engine (pre-trade checks + circuit breakers) — 1 week
+4. Persistence (Redis + Postgres + event sourcing) — 1 week
+5. API layer (REST + WebSocket) — 1 week
+6. Security (JWT + rate limiting + audit log) — 3 days
+7. Observability (Micrometer + Grafana) — 3 days
+8. Load testing with a simulated order generator — 2 days
+
+Total: ~7–8 weeks of solid part-time work. The result is the strongest undergraduate systems project in any Goldman engineering interview pool.

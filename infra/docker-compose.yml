@@ -1,0 +1,134 @@
+version: "3.9"
+
+# ============================================================
+# TitanX Infrastructure — Docker Compose
+# ============================================================
+# Services:
+#   matching-engine   — Core Java matching engine (port 8080)
+#   api-gateway       — Spring Boot REST + WebSocket (port 8081)
+#   redis             — Hot-path position cache + pub/sub (port 6379)
+#   postgres          — Append-only event store + audit trail (port 5432)
+#   prometheus        — Metrics scraping (port 9090)
+#   grafana           — Dashboards (port 3000, admin/titanx)
+#
+# Start:  docker compose up -d
+# Logs:   docker compose logs -f matching-engine
+# Stop:   docker compose down -v
+
+services:
+
+  # ---- Core Matching Engine ----
+  matching-engine:
+    build:
+      context: ../matching-engine
+      dockerfile: Dockerfile
+    container_name: titanx-engine
+    ports:
+      - "8080:8080"    # HTTP metrics endpoint
+    environment:
+      REDIS_URI: redis://redis:6379
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/titanx
+      POSTGRES_USER: titanx
+      POSTGRES_PASSWORD: titanx_secret
+      JVM_OPTS: >
+        -server
+        -XX:+UseZGC
+        -XX:MaxGCPauseMillis=1
+        -Xms512m -Xmx1g
+        -Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - titanx-net
+
+  # ---- Redis ----
+  redis:
+    image: redis:7.2-alpine
+    container_name: titanx-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - titanx-net
+
+  # ---- PostgreSQL ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: titanx-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: titanx
+      POSTGRES_USER: titanx
+      POSTGRES_PASSWORD: titanx_secret
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U titanx -d titanx"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - titanx-net
+
+  # ---- Prometheus ----
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: titanx-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - titanx-net
+
+  # ---- Grafana ----
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: titanx-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: titanx
+      GF_PROVISIONING_PATH: /etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - titanx-net
+
+volumes:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  titanx-net:
+    driver: bridge

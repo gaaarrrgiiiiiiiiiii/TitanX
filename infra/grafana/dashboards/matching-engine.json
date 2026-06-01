@@ -1,0 +1,79 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus"
+    }
+  ],
+  "title": "TitanX Matching Engine",
+  "uid":  "titanx-engine",
+  "tags": ["titanx", "trading", "matching-engine"],
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Order Throughput (orders/sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(titanx_orders_submitted_total[1m])",
+          "legendFormat": "orders/sec"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Matching Latency p50 / p95 / p99 (µs)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.50, rate(titanx_order_matching_latency_seconds_bucket[1m])) * 1e6",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.95, rate(titanx_order_matching_latency_seconds_bucket[1m])) * 1e6",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.99, rate(titanx_order_matching_latency_seconds_bucket[1m])) * 1e6",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Rate Limited Orders (rejected/sec)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(titanx_orders_rate_limited_total[1m])",
+          "legendFormat": "rate limited/sec"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "JVM GC Pause Time (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 12, "x": 6, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(jvm_gc_pause_seconds_sum[1m]) * 1000",
+          "legendFormat": "GC pause ms/sec"
+        }
+      ]
+    }
+  ]
+}

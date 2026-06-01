@@ -1,0 +1,42 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Spring Boot
+*.log
+logs/
+
+# Docker volumes (not needed in source)
+data/
+
+# Environment / secrets
+.env
+*.env.local
+secrets/
+
+# Compiled output
+out/
+build/
+
+# OS
+.DS_Store
+ehthumbs.db
+Desktop.ini
