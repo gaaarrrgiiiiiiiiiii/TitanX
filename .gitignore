@@ -1,15 +1,39 @@
-# Maven
+# ============================================================
+#  TitanX — .gitignore
+# ============================================================
+
+# ---- Java / Maven ----
 target/
 *.class
 *.jar
 *.war
 *.ear
 *.nar
-*.zip
-*.tar.gz
-*.rar
 
-# IDE files
+# ---- C++ Build Artifacts ----
+backend/build/
+backend/build-*/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.exe
+*.out
+
+# ---- CMake ----
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# ---- vcpkg ----
+backend/vcpkg_installed/
+vcpkg_installed/
+
+# ---- IDE ----
 .idea/
 *.iml
 *.iws
@@ -17,26 +41,33 @@ target/
 .vscode/
 *.swp
 *.swo
-.DS_Store
-Thumbs.db
 
-# Spring Boot
+# ---- Logs ----
 *.log
 logs/
 
-# Docker volumes (not needed in source)
+# ---- Docker volumes ----
 data/
 
-# Environment / secrets
+# ---- Environment / Secrets ----
 .env
 *.env.local
+*.env.production
 secrets/
 
-# Compiled output
-out/
-build/
-
-# OS
+# ---- OS ----
 .DS_Store
 ehthumbs.db
 Desktop.ini
+Thumbs.db
+
+# ---- Node / Frontend ----
+node_modules/
+dist/
+.parcel-cache/
+
+# ---- Misc ----
+*.zip
+*.tar.gz
+*.rar
+out/

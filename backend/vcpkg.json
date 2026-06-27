@@ -1,0 +1,16 @@
+{
+  "name": "titanx-engine",
+  "version": "1.0.0",
+  "description": "TitanX High-Performance Order Matching Engine (C++17)",
+  "dependencies": [
+    "crow",
+    "nlohmann-json",
+    "spdlog",
+    "libpq",
+    "hiredis",
+    "jwt-cpp",
+    "prometheus-cpp",
+    "gtest",
+    "stduuid"
+  ]
+}

@@ -4,8 +4,7 @@ version: "3.9"
 # TitanX Infrastructure — Docker Compose
 # ============================================================
 # Services:
-#   matching-engine   — Core Java matching engine (port 8080)
-#   api-gateway       — Spring Boot REST + WebSocket (port 8081)
+#   matching-engine   — C++17 matching engine + REST gateway (port 8081)
 #   redis             — Hot-path position cache + pub/sub (port 6379)
 #   postgres          — Append-only event store + audit trail (port 5432)
 #   prometheus        — Metrics scraping (port 9090)
@@ -17,25 +16,19 @@ version: "3.9"
 
 services:
 
-  # ---- Core Matching Engine ----
+  # ---- C++ Matching Engine + REST Gateway ----
   matching-engine:
     build:
-      context: ../matching-engine
+      context: ../backend-cpp
       dockerfile: Dockerfile
     container_name: titanx-engine
     ports:
-      - "8080:8080"    # HTTP metrics endpoint
+      - "8081:8081"    # Crow REST API
     environment:
-      REDIS_URI: redis://redis:6379
-      POSTGRES_URL: jdbc:postgresql://postgres:5432/titanx
-      POSTGRES_USER: titanx
-      POSTGRES_PASSWORD: titanx_secret
-      JVM_OPTS: >
-        -server
-        -XX:+UseZGC
-        -XX:MaxGCPauseMillis=1
-        -Xms512m -Xmx1g
-        -Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager
+      TITANX_DB_URL: "host=postgres port=5432 dbname=titanx user=titanx password=titanx_secret"
+      TITANX_REDIS_HOST: redis
+      TITANX_REDIS_PORT: 6379
+      TITANX_HTTP_PORT: 8081
     depends_on:
       postgres:
         condition: service_healthy
